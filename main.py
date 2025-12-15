@@ -1,110 +1,152 @@
 from pathlib import Path
 import add
 
-# reset
+# Išvesties aplankas + atstatymas
+isvesties_aplankas = Path(__file__).parent
 add.clear()
 
-# ---------- parameters ----------
-THICKNESS_SCALE = 1.15
-H_GLASS = 18.0
-H_CAP   = 4.0
+# Parametrai
+STORIO_MASTELIS = 1.15
 
-# glass frustum radii
-R_GLASS_BOTTOM = 3.2   # at A1 (near base)
-R_GLASS_TOP    = 1.6   # at A2 (near cap)
+# Aukščiai
+AUKSTIS_STIKLO = 18.0   # stiklo dalies aukštis
+AUKSTIS_DANGTELIO = 4.0  # dangtelio aukštis
 
-# cap frustum radii
-R_CAP_BOTTOM = R_GLASS_TOP   # slightly wider than glass top
-R_CAP_TOP    = 1.1                 # small top opening
+# Stiklo (nupjauto kūgio) spinduliai
+SPIND_STIKLO_APACIA = 3.2   # ties A1 (prie pagrindo)
+SPIND_STIKLO_VIRSUS = 1.6   # ties A2 (prie dangtelio)
 
-# --- metal base ---
-H_BASE = 10.0
-R_FOOT = 4.0     # bottom radius
-R_WAIST = 1.7     # narrow waist radius
-WAIST_POS = 0.55   # waist position along height (0..1)
+# Dangtelio (nupjauto kūgio) spinduliai
+SPIND_DANGTELIO_APACIA = SPIND_STIKLO_VIRSUS  # sutampa su stiklo viršumi
+SPIND_DANGTELIO_VIRSUS = 1.1                  # maža viršutinė anga
 
-# seam at the top of the base
-R_SEAM = R_GLASS_BOTTOM
+# --- Metalinis pagrindas ---
+AUKSTIS_PAGRINDO = 10.0
+SPIND_PADAS = 4.0        # apatinis spindulys (padas)
+SPIND_LIEMUO = 1.7       # siauriausia vieta (liemuo)
+LIEMENS_POZICIJA = 0.55  # liemens vieta pagal aukštį (0..1)
 
-# resolution
-K_AROUND = 64
-GRID_T   = 64
+# Siūlė pagrindo viršuje (kur jungiasi su stiklu)
+SPIND_SIULE = SPIND_STIKLO_APACIA
 
-# colors
-CLR_BASE  = [80, 80, 80]
-CLR_GLASS = [185, 230, 255]
-CLR_CAP   = [60, 60, 60]
-CLR_LAVA  = [230, 60, 40]
+# Tinklelio rezoliucija
+K_APLINK = 64   # segmentų kiekis aplink
+T_TINKLAS = 64  # segmentų kiekis pagal aukštį
 
-# sealing ring radius (outer-looking rim at glass/cap junction)
-R_RING = R_CAP_BOTTOM * THICKNESS_SCALE
+# Spalvos
+SPALVA_PAGRINDO = [80, 80, 80]
+SPALVA_STIKLO = [185, 230, 255]
+SPALVA_DANGT = [60, 60, 60]
+SPALVA_LAVOS = [230, 60, 40]
 
-# axis points (lamp upright on Z)
+# Sandarinimo žiedas (išorinis „apvadas“ stiklo/dangtelio sandūroje)
+SPIND_ZIEDO = SPIND_DANGTELIO_APACIA * STORIO_MASTELIS
+
+
+# Ašies taškai (lempa stovi ant Z ašies)
 A0 = [0.0, 0.0, 0.0]
-A1 = [0.0, 0.0, H_BASE]
-A2 = [0.0, 0.0, H_BASE + H_GLASS]
-A3 = [0.0, 0.0, H_BASE + H_GLASS + H_CAP]
+A1 = [0.0, 0.0, AUKSTIS_PAGRINDO]
+A2 = [0.0, 0.0, AUKSTIS_PAGRINDO + AUKSTIS_STIKLO]
+A3 = [0.0, 0.0, AUKSTIS_PAGRINDO + AUKSTIS_STIKLO + AUKSTIS_DANGTELIO]
 
-# ---------- profiles ----------
-def ease_out(u: float) -> float:
-    """0..1 -> 0..1, smooth near 0, stronger near 1."""
-    u = max(0.0, min(1.0, u))
-    return 1.0 - (1.0 - u) ** 2
-
-def S_base_black(t: float):
+# ==================================
+# Profiliai (spin3D funkcijoms)
+# Kiekviena grąžina [spindulys, z]
+# ==================================
+def S_pagrindas(t: float):
     """
-    - lower part: smooth flare (curved)
-    - upper part: nearly straight cone
+    - apatinė dalis: nuo pado iki liemens
+    - viršutinė dalis: nuo liemens iki siūlės
     """
-    z = t * H_BASE
+    z = t * AUKSTIS_PAGRINDO
 
-    if t <= WAIST_POS:
-        # LOWER PART (curved flare): R_FOOT -> R_WAIST
-        u = t / WAIST_POS
-        r = R_FOOT + (R_WAIST - R_FOOT) * u
+    if t <= LIEMENS_POZICIJA:
+        # APATINĖ DALIS: SPIND_PADAS -> SPIND_LIEMUO
+        u = t / LIEMENS_POZICIJA
+        r = SPIND_PADAS + (SPIND_LIEMUO - SPIND_PADAS) * u
     else:
-        # UPPER PART (straight): R_WAIST -> R_SEAM
-        u = (t - WAIST_POS) / (1.0 - WAIST_POS)
-        r = R_WAIST + (R_SEAM - R_WAIST) * u
+        # VIRŠUTINĖ DALIS: SPIND_LIEMUO -> SPIND_SIULE
+        u = (t - LIEMENS_POZICIJA) / (1.0 - LIEMENS_POZICIJA)
+        r = SPIND_LIEMUO + (SPIND_SIULE - SPIND_LIEMUO) * u
 
-    return [r * THICKNESS_SCALE, z]
+    return [r * STORIO_MASTELIS, z]
 
-def S_glass(t: float):
-    z = t * H_GLASS
-    r = R_GLASS_BOTTOM + (R_GLASS_TOP - R_GLASS_BOTTOM) * t
-    return [r * THICKNESS_SCALE, z]
+def S_stiklas(t: float):
+    z = t * AUKSTIS_STIKLO
+    r = SPIND_STIKLO_APACIA + (SPIND_STIKLO_VIRSUS - SPIND_STIKLO_APACIA) * t
+    return [r * STORIO_MASTELIS, z]
 
-def S_cap(t: float):
-    z = t * H_CAP
-    r = R_CAP_BOTTOM + (R_CAP_TOP - R_CAP_BOTTOM) * t
-    return [r * THICKNESS_SCALE, z]
+def S_dangtelis(t: float):
+    z = t * AUKSTIS_DANGTELIO
+    r = SPIND_DANGTELIO_APACIA + (SPIND_DANGTELIO_VIRSUS - SPIND_DANGTELIO_APACIA) * t
+    return [r * STORIO_MASTELIS, z]
 
-# ---------- build ----------
 
-# metal base
-add.spin3D(A0, A1, S_base_black, 0.0, 1.0, GRID_T, K_AROUND, CLR_BASE)
+### Objekto kūrimas ###
+# --- PAGRINDAS ---
+add.spin3D(A0, A1, S_pagrindas, 0.0, 1.0, T_TINKLAS, K_APLINK, SPALVA_PAGRINDO)
 
-# glass bottle
-add.spin3D(A1, A2, S_glass, 0.0, 1.0, GRID_T, K_AROUND, CLR_GLASS)
+# Uždaryti pagrindo apačią (diskas ties A0)
+add.circle(A0, A1, SPIND_PADAS * STORIO_MASTELIS, K_APLINK, SPALVA_PAGRINDO)
 
-# cap (frustum)
-add.spin3D(A2, A3, S_cap, 0.0, 1.0, GRID_T // 2, K_AROUND, CLR_CAP)
+add.off(str(isvesties_aplankas / "lamp_base.off"))
 
-# sealing ring at glass/cap junction
-add.cylinder2([0.0, 0.0, H_BASE + H_GLASS - 0.12],
-              [0.0, 0.0, H_BASE + H_GLASS + 0.12],
-              R_RING, K_AROUND, CLR_CAP)
+# --- STIKLAS ---
+add.spin3D(A1, A2, S_stiklas, 0.0, 1.0, T_TINKLAS, K_APLINK, SPALVA_STIKLO)
+add.off(str(isvesties_aplankas / "lamp_glass.off"))
 
-# lava blobs (inside glass)
+# --- DANGTELIS + ŽIEDAS ---
+add.spin3D(A2, A3, S_dangtelis, 0.0, 1.0, T_TINKLAS // 2, K_APLINK, SPALVA_DANGT)
+
+# Uždaryti dangtelio viršų (diskas ties A3)
+add.circle(A3, A2, SPIND_DANGTELIO_VIRSUS * STORIO_MASTELIS, K_APLINK, SPALVA_DANGT)
+
+# Žiedas stiklo/dangtelio sandūroje
+add.cylinder2(
+    [0.0, 0.0, AUKSTIS_PAGRINDO + AUKSTIS_STIKLO - 0.12],
+    [0.0, 0.0, AUKSTIS_PAGRINDO + AUKSTIS_STIKLO + 0.12],
+    SPIND_ZIEDO,
+    K_APLINK,
+    SPALVA_DANGT,
+)
+
+add.off(str(isvesties_aplankas / "lamp_cap.off"))
+
+
+# Lava
+def stiklo_spindulys_ties_z(z: float) -> float:
+    """Stiklo spindulys ties konkrečiu z (modelio viduje)."""
+    t = (z - AUKSTIS_PAGRINDO) / AUKSTIS_STIKLO
+    t = max(0.0, min(1.0, t))
+    r = SPIND_STIKLO_APACIA + (SPIND_STIKLO_VIRSUS - SPIND_STIKLO_APACIA) * t
+    return r * STORIO_MASTELIS
+
+def saugi_sfera(centras, r, k, rgb, paklaida=0.12):
+    """Prideda sferą tik jei ji telpa stiklo viduje (neprasikiša pro sienelę)."""
+    x, y, z = centras
+    d = (x * x + y * y) ** 0.5  # atstumas nuo ašies
+    rmax = stiklo_spindulys_ties_z(z) - d - paklaida
+    if rmax < 0.05:
+        return
+    add.sphere([x, y, z], min(r, rmax), k, rgb)
+
+# --- Apatinis lavos blob ---
+saugi_sfera([0.0, 0.0, AUKSTIS_PAGRINDO + 0.6], 3.35, 30, SPALVA_LAVOS)
+saugi_sfera([0.0, 0.0, AUKSTIS_PAGRINDO + 1.3], 3.20, 28, SPALVA_LAVOS)
+saugi_sfera([0.0, 0.0, AUKSTIS_PAGRINDO + 2.0], 3.00, 26, SPALVA_LAVOS)
+
+# --- Beveik atsiskiriantis burbulas ---
+saugi_sfera([0.0, 0.0, AUKSTIS_PAGRINDO + 3.05], 1.00, 20, SPALVA_LAVOS)
+saugi_sfera([0.0, 0.0, AUKSTIS_PAGRINDO + 3.70], 0.55, 18, SPALVA_LAVOS)
+saugi_sfera([0.0, 0.0, AUKSTIS_PAGRINDO + 6.0], 1.55, 22, SPALVA_LAVOS)
+
+# --- Plūduriuojantys lavos gabalėliai ---
 for (x, y, z), r in zip(
-    [(0.6, 0.2, H_BASE + 4.0),
-     (-0.5, -0.2, H_BASE + 10.0),
-     (0.1, 0.4, H_BASE + 14.0)],
-    [1.2, 0.9, 0.7],
+    [(0.6, 0.2, AUKSTIS_PAGRINDO + 4.8),
+     (-0.5, -0.2, AUKSTIS_PAGRINDO + 10.0),
+     (0.1, 0.4, AUKSTIS_PAGRINDO + 14.0)],
+    [1.1, 0.9, 0.7],
 ):
-    add.sphere([x, y, z], r, 18, CLR_LAVA)
+    saugi_sfera([x, y, z], r, 18, SPALVA_LAVOS)
 
-# ---------- export ----------
-out_path = Path(__file__).with_name("lava_lamp.off")
-add.off(str(out_path))
-print(f"Saved: {out_path}")
+add.off(str(isvesties_aplankas / "lamp_lava.off"))
